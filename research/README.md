@@ -110,6 +110,44 @@ prefer Windows' normal shutdown when preserving a running installation.
 
 Opt-in live feature checks: `python3 research/tests/x64_features_live.py SOCKET`.
 
+#### Exposing only this socket to a remote VM
+
+On the host, replace `research-vm` with your remote VM's SSH alias:
+
+```sh
+ssh -NT -o ExitOnForwardFailure=yes \
+  -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
+  -R /home/ubuntu/vroom-agent.sock:/run/user/1000/vroom-agent.sock \
+  research-vm
+```
+
+Keep this tunnel alive. Inside the remote VM:
+
+```sh
+vroom-rpc --socket /home/ubuntu/vroom-agent.sock describe
+vroom-rpc --socket /home/ubuntu/vroom-agent.sock commands.list
+vroom-rpc --socket /home/ubuntu/vroom-agent.sock run vm.resume
+vroom-rpc --socket /home/ubuntu/vroom-agent.sock run vm.pause
+vroom-rpc --socket /home/ubuntu/vroom-agent.sock run kernel.info
+vroom-rpc --socket /home/ubuntu/vroom-agent.sock run kernel.symbols
+vroom-rpc --socket /home/ubuntu/vroom-agent.sock run kernel.processes
+vroom-rpc --socket /home/ubuntu/vroom-agent.sock run kernel.modules
+```
+
+The remote VM needs neither `/dev/kvm` nor a copy of the Windows disk. A listening SSH
+socket alone does not prove the backend is alive: `describe` must succeed.
+Connection reset commonly means the host lab/socket has stopped. The host socket
+is mode 0600 and verifies the peer UID (`SO_PEERCRED` on Linux); SSH must run as
+the lab's host user. The endpoint is custom newline-delimited JSON-RPC, **not MCP**.
+
+Treat socket access as debugger authority, not read-only access. Risk metadata
+is descriptive, not an authorization policy. The lab runs without the production
+VMM sandbox; expose it only to agents you authorize to control this guest, or
+place a separately enforced allowlist proxy in front of it. The x64 allowlist
+excludes host-side download paths and fuzzer subprocesses. `guest.upload`
+follows ARM64 semantics and can read any host file the lab user can read.
+
+
 ### RPC reference (architecture-dependent capabilities)
 
 The catalog below includes ARM64-only operations. On every connection,
